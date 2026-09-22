@@ -46,11 +46,12 @@ def conectar():
     if not configurado():
         raise RuntimeError(
             "Credenciais ausentes. Copie `.env.exemplo` para `.env` e preencha "
-            "`CENARIOS_USER` e `CENARIOS_PASSWORD`."
+            "`CENARIOS_HOST`, `CENARIOS_USER` e `CENARIOS_PASSWORD` — o "
+            "endereço do servidor não vive no repositório, que é público."
         )
 
     conexao = psycopg2.connect(
-        host=os.environ.get("CENARIOS_HOST", "<host-do-banco>"),
+        host=os.environ["CENARIOS_HOST"],
         port=int(os.environ.get("CENARIOS_PORT", "5432")),
         dbname=os.environ.get("CENARIOS_DB", "cenarios_ai"),
         user=os.environ["CENARIOS_USER"],
