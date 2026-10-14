@@ -913,6 +913,37 @@ def _camada_rotulos(pydeck, dados):
 ESTILO_SEM_FUNDO = 'data:application/json,{"version":8,"sources":{},"layers":[]}'
 
 
+@dataclass(frozen=True)
+class Contornos:
+    """Divisas e realce da camada de geografia — a parte do mapa que é **casca**.
+
+    Cada painel tem a sua: o hansepe desenha a divisa em lilás acinzentado do
+    meio da rampa, o DFTB em vinho, e aqui ela é branca translúcida. O
+    desenho é o mesmo; só as cores mudam, por isso entram como parâmetro de
+    :func:`deck` e não como constante do módulo. O padrão é o visual do tbpe.
+
+    ``sem_dado`` é o contorno de quem não tem valor. ``None`` usa o
+    ``padrao``. O hansepe e o DFTB o querem **escuro**: o preenchimento
+    cinza de "sem dado" não se separa da faixa mais clara da rampa na
+    tritanopia (ΔE 6,1 no hansepe), e um traço escuro é outro canal, que
+    nenhum daltonismo apaga.
+
+    ``realcado``, ``apagado`` e ``preenchimento_apagado`` só valem com uma
+    faixa da legenda escolhida (``faixa_realcada``): a faixa fica com a cor e
+    um traço escuro, o resto vai a cinza **chapado** — cinza, e não a mesma
+    cor desbotada, porque a faixa mais baixa é o tom mais claro da rampa e
+    contra o resto desbotado não se distinguia de nada (hansepe, 30/set).
+    """
+
+    padrao: tuple[int, ...] = (255, 255, 255, 150)
+    sem_dado: tuple[int, ...] | None = None
+    realcado: tuple[int, ...] = (17, 24, 39, 235)
+    apagado: tuple[int, ...] = (205, 208, 214, 180)
+    preenchimento_apagado: tuple[int, ...] = (226, 228, 233)
+    largura: float = 0.6
+    largura_realce: float = 1.1
+
+
 def deck(
     camada,
     valores: pd.Series,
@@ -920,7 +951,7 @@ def deck(
     chave: str,
     rampa: list[str],
     rotulo_metrica: str,
-    coluna_nome: str = "bairro_nome",
+    coluna_nome: str,
     decimais: int = 1,
     altura: int = ALTURA,
     geometrias: list | None = None,
@@ -929,13 +960,28 @@ def deck(
     metodo: str = "NATURAL",
     cortes_fixos: list[float] | None = None,
     detalhes: list[tuple[str, pd.Series, str, int]] | None = None,
+    notas: pd.Series | None = None,
+    faixa_realcada: str | None = None,
+    contornos: Contornos = Contornos(),
 ):
     """Mapa em pydeck, para o drill-down por clique.
+
+    ``coluna_nome`` é a coluna da camada com o nome de cada geografia —
+    ``nome_mun``, ``regiao``, ``bairro_nome``, a RA. Sem padrão: o antigo,
+    ``"bairro_nome"``, era herança do RecifeTB e, nas camadas de PE, caía em
+    silêncio para a chave, e o tooltip mostrava o código no lugar do nome.
 
     ``detalhes`` é a lista de linhas extras do tooltip, no formato do painel
     de origem — ``(rótulo, série indexada pela chave, cor, decimais)``. O
     título e a métrica pintada vêm sempre; estas são os componentes que
     dão contexto ao número (casos, curas, população).
+
+    ``notas`` é texto livre por chave, numa linha a mais do tooltip só onde
+    há nota — a de população pequena do RecifeTB. Texto, não HTML: é escapado.
+
+    ``faixa_realcada`` é um rótulo da escala: com ele, só a faixa fica com
+    cor (a legenda clicável do hansepe e do DFTB). Rótulo que não existe na
+    escala é ignorado. ``contornos`` dá as cores disso e das divisas.
 
     O coroplético do Plotly não emite evento de clique — ver
     docs/mapa-clique.md. O ``GeoJsonLayer`` do deck.gl faz *picking* por GPU,
@@ -957,10 +1003,30 @@ def deck(
         cortes_fixos=cortes_fixos,
         decimais=decimais,
     )
+    # Faixa que não existe nesta escala não apaga ninguém: o rótulo guardado
+    # da última interação continua no `session_state` quando a métrica ou a
+    # classificação muda, e sem esta linha o mapa inteiro sairia apagado
+    # (hansepe).
+    if faixa_realcada is not None and faixa_realcada not in escala_.cores:
+        faixa_realcada = None
+
     dados["classe"] = classificar(dados["valor"], escala_)
     dados["cor"] = dados["classe"].map(
         lambda c: _rgb(escala_.cores.get(c, SEM_DADO))
+        if faixa_realcada in (None, c)
+        else list(contornos.preenchimento_apagado)
     )
+
+    # Contorno sempre por feição: "sem dado" pode querer o seu, haja ou não
+    # faixa escolhida.
+    def _contorno(classe: str) -> list[int]:
+        if classe == ROTULO_SEM_DADO and contornos.sem_dado is not None:
+            return list(contornos.sem_dado)
+        if faixa_realcada is None:
+            return list(contornos.padrao)
+        return list(contornos.realcado if classe == faixa_realcada else contornos.apagado)
+
+    dados["contorno"] = dados["classe"].map(_contorno)
     dados["exibicao"] = dados["valor"].map(
         lambda v: "—" if pd.isna(v) else _formatar(float(v), decimais)
     )
@@ -973,15 +1039,29 @@ def deck(
     # escrevia `null`. Ausente é `null`. Vem depois de `classe` e `exibicao`,
     # que precisam do `NaN` para dar "sem dado" e "—".
     dados["valor"] = dados["valor"].astype(object).where(dados["valor"].notna(), None)
-    # O deck escapa HTML vindo das propriedades, então cada linha extra do
-    # tooltip entra como **valor** já formatado (`d0`, `d1`, …) e rótulo e
-    # cor — iguais para todas as feições — ficam no template.
+    # Cada linha extra do tooltip entra como **valor** já formatado (`d0`,
+    # `d1`, …), e rótulo e cor — iguais para todas as feições — ficam no
+    # template.
+    #
+    # O componente **não escapa** o que vem das propriedades: `mapa.js`
+    # substitui `{campo}` pelo valor cru e o tooltip é HTML. (Escapava no
+    # `st.pydeck_chart`, e um comentário daqui dizia isso até 14/out.) Por isso
+    # o que é texto livre, como as notas, é escapado aqui.
     for i, (_, serie, _, casas) in enumerate(detalhes or []):
         dados[f"d{i}"] = dados[chave].astype(str).map(
             lambda k, serie=serie, casas=casas: (
                 "—" if serie.get(k) is None or pd.isna(serie.get(k))
                 else _formatar(float(serie.get(k)), casas)
             )
+        )
+    # Uma linha a mais só onde há nota. O `<br>` vai dentro do valor: com ele
+    # no template, quem não tem nota ganhava uma linha vazia (RecifeTB).
+    if notas is not None:
+        from html import escape
+
+        dados["nota"] = dados[chave].map(notas).map(
+            lambda t: f"<br><span style='opacity:.85'>{escape(t)}</span>"
+            if isinstance(t, str) and t else ""
         )
 
     limites, ilhas = limites_uteis(camada)
@@ -1054,8 +1134,10 @@ def deck(
         transitions={"getFillColor": TRANSICAO_COR_MS},
         data=colecao,
         get_fill_color="properties.cor",
-        get_line_color=[255, 255, 255, 150],
-        line_width_min_pixels=0.6,
+        get_line_color="properties.contorno",
+        line_width_min_pixels=(
+            contornos.largura_realce if faixa_realcada is not None else contornos.largura
+        ),
         stroked=True,
         filled=True,
         # `pickable` é o que faz o clique existir; `auto_highlight` dá o
@@ -1141,7 +1223,8 @@ def deck(
             "html": (
                 "<div style='font-weight:700;font-size:13px'>{rotulo}</div>"
                 f"<div style='opacity:.85;margin-bottom:4px'>{rotulo_metrica}: "
-                "<b>{exibicao}</b></div>" + _template_detalhes(detalhes or [])
+                "<b>{exibicao}</b>" + ("{nota}" if notas is not None else "") + "</div>"
+                + _template_detalhes(detalhes or [])
             ),
             "style": {
                 "backgroundColor": "rgba(17,24,39,.96)",
@@ -1157,12 +1240,9 @@ def deck(
     mapa_deck.map_style = ESTILO_SEM_FUNDO
     _compactar(mapa_deck)
 
-    # O zoom pela roda do mouse é bloqueado no DOM, por
-    # `componentes.script_travar_zoom`. Declarar `controller: false` aqui não
-    # adianta: o `DeckGlJsonChart` do Streamlit renderiza
-    # `<DeckGL controller={true}>` fixo e descarta o que vem no JSON. Havia
-    # duas declarações inertes neste ponto — saíram, porque código que não faz
-    # nada mas parece fazer engana quem for mexer depois.
+    # O zoom pela roda do mouse é desligado no componente (`scrollZoom: false`
+    # em `mapa.js`); o `script_travar_zoom`, que fazia isso para o
+    # `st.pydeck_chart`, saiu em 21/set.
 
     return mapa_deck, escala_
 

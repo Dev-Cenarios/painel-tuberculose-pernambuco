@@ -302,7 +302,8 @@ def test_deck_pinta_cada_feicao() -> None:
     camada = geo.municipios("PE")
     valores = leitura.valores_por_geografia(Escopo("TB", 2024, "UF", uf="PE"), "incid")
     desenho, escala = mapa.deck(
-        camada, valores, chave="cod_mun6", rampa=RAMPA, rotulo_metrica="Incidência"
+        camada, valores, chave="cod_mun6", rampa=RAMPA, rotulo_metrica="Incidência",
+        coluna_nome="nome_mun",
     )
     # Três e não uma: PE tem Fernando de Noronha, que ganha quadro de destaque
     # com moldura e rótulo. Ver `mapa.destacar_ilhas`.
@@ -653,7 +654,8 @@ def test_destacar_ilha_nao_aproxima() -> None:
     def zoom(destacado):
         figura, _ = mapa.deck(
             pe, valores, chave="cod_mun6", rampa=pack.rampa_mapa("incid"),
-            rotulo_metrica="Incidência", destacado=destacado,
+            rotulo_metrica="Incidência", coluna_nome="nome_mun",
+            destacado=destacado,
         )
         return figura.initial_view_state.zoom
 
@@ -683,7 +685,8 @@ def test_o_atlas_de_fonte_cobre_o_texto_que_a_camada_desenha() -> None:
     valores = leitura.valores_por_geografia(Escopo("TUBERCULOSE", 2024, "UF", uf="AM"), "incid")
     figura, _ = mapa.deck(
         camada, valores, chave="cod_mun6", rampa=pack.rampa_mapa("incid"),
-        rotulo_metrica="Incidência", destacado=alvo["cod_mun6"].iloc[0],
+        rotulo_metrica="Incidência", coluna_nome="nome_mun",
+        destacado=alvo["cod_mun6"].iloc[0],
     )
 
     for camada_json in json.loads(figura.to_json())["layers"]:

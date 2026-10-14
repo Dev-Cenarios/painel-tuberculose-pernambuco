@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import pandas as pd
 import pytest
 
 from src import mapa_componente
@@ -193,6 +194,109 @@ def test_cura_numa_macrorregiao_sai_em_json_valido(ano: int) -> None:
 
     desenho, _ = mapa.deck(
         camada, valores, chave="cod_mun6", rampa=pack.rampa_mapa("cura_pct"),
-        rotulo_metrica="Cura", geometrias=mapa.geometrias_geojson(camada),
+        rotulo_metrica="Cura", coluna_nome="nome_mun",
+        geometrias=mapa.geometrias_geojson(camada),
     )
     _json_estrito(desenho.to_json())
+
+
+# ---------------------------------------------------------------------------
+# O `deck` dos quatro painéis: notas, faixa realçada, contornos e clique
+# ---------------------------------------------------------------------------
+#
+# 14/out/2026: o `deck` do tbpe passa a aceitar o que cada painel inventou à
+# parte — `notas` do RecifeTB, `faixa_realcada` do hansepe e do DFTB, cores
+# de contorno como casca e os campos do clique —, para ser o do core.
+
+
+def _feicoes(desenho) -> dict:
+    spec = _json_estrito(desenho.to_json())
+    geo = next(c for c in spec["layers"] if c.get("id") == "geografia")
+    return geo, {f["properties"]["cod_mun6"]: f["properties"] for f in geo["data"]["features"]}
+
+
+def test_o_padrao_mantem_a_divisa_de_sempre() -> None:
+    """Sem `contornos`, o tbpe desenha como antes: divisa branca translúcida
+    em toda feição, inclusive a sem dado, na espessura de sempre."""
+    from src import mapa
+
+    geo, props = _feicoes(_deck(_dois_municipios(), [1.0, float("nan"), 3.0])[0])
+    assert {tuple(p["contorno"]) for p in props.values()} == {(255, 255, 255, 150)}
+    assert geo["lineWidthMinPixels"] == mapa.Contornos().largura
+    assert geo["getLineColor"] == "@@=properties.contorno"
+
+
+def test_contorno_proprio_para_sem_dado() -> None:
+    from src import mapa
+
+    escuro = (71, 78, 92, 255)
+    _, props = _feicoes(_deck(
+        _dois_municipios(), [1.0, float("nan"), 3.0],
+        contornos=mapa.Contornos(sem_dado=escuro),
+    )[0])
+    assert tuple(props["2"]["contorno"]) == escuro
+    assert tuple(props["1"]["contorno"]) == mapa.Contornos().padrao
+
+
+def test_faixa_realcada_apaga_o_resto_em_cinza_chapado() -> None:
+    from src import mapa
+
+    camada = _dois_municipios()
+    _, escala = _deck(camada, [1.0, 50.0, 99.0])
+    escolhida = mapa.classificar(pd.Series([99.0]), escala).iloc[0]
+
+    desenho, _ = _deck(camada, [1.0, 50.0, 99.0], faixa_realcada=escolhida)
+    geo, props = _feicoes(desenho)
+    c = mapa.Contornos()
+    assert props["3"]["classe"] == escolhida
+    assert props["3"]["cor"] != list(c.preenchimento_apagado)
+    assert tuple(props["3"]["contorno"]) == c.realcado
+    for k in ("1", "2"):
+        assert props[k]["cor"] == list(c.preenchimento_apagado)
+        assert tuple(props[k]["contorno"]) == c.apagado
+    assert geo["lineWidthMinPixels"] == c.largura_realce
+
+
+def test_faixa_que_nao_existe_nesta_escala_nao_apaga_ninguem() -> None:
+    """O rótulo da última interação sobra no `session_state` quando a métrica
+    muda; sem a guarda, o mapa inteiro sairia cinza."""
+    from src import mapa
+
+    _, props = _feicoes(_deck(_dois_municipios(), [1.0, 2.0, 3.0], faixa_realcada="9 a 99")[0])
+    assert all(p["cor"] != list(mapa.Contornos().preenchimento_apagado) for p in props.values())
+
+
+def test_notas_so_onde_ha_e_escapadas() -> None:
+    """O componente não escapa as propriedades — `mapa.js` troca `{campo}`
+    pelo valor cru num tooltip HTML —, então a nota, texto livre, é escapada
+    no Python."""
+    camada = _dois_municipios()
+    notas = pd.Series({"1": "População < 5 mil: taxa instável", "3": ""})
+    desenho, _ = _deck(camada, [1.0, 2.0, 3.0], notas=notas)
+    _, props = _feicoes(desenho)
+    assert "&lt; 5 mil" in props["1"]["nota"] and "<br>" in props["1"]["nota"]
+    assert props["2"]["nota"] == "" and props["3"]["nota"] == ""
+    assert "{nota}" in desenho._tooltip["html"]
+
+
+def test_sem_notas_o_tooltip_nao_muda() -> None:
+    desenho, _ = _deck(_dois_municipios(), [1.0, 2.0, 3.0])
+    _, props = _feicoes(desenho)
+    assert "nota" not in props["1"]
+    assert "{nota}" not in desenho._tooltip["html"]
+
+
+def test_coluna_nome_e_obrigatoria() -> None:
+    """O padrão antigo, `"bairro_nome"`, caía em silêncio para a chave nas
+    camadas de PE: o tooltip mostrava o código no lugar do nome."""
+    from src import mapa
+
+    with pytest.raises(TypeError):
+        mapa.deck(_dois_municipios(), pd.Series([1.0]), chave="cod_mun6",
+                  rampa=["#000000"] * 7, rotulo_metrica="x")
+
+
+def test_o_clique_aceita_os_campos_de_outro_territorio() -> None:
+    ev = {"nonce": "a-1", "properties": {"bairro_key": "boa viagem", "ds": "VI"}}
+    assert mapa_componente.alvo_do_clique(ev, None) == (None, "a-1")
+    assert mapa_componente.alvo_do_clique(ev, None, ("bairro_key", "ds")) == ("boa viagem", "a-1")

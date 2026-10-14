@@ -26,6 +26,10 @@ DIRETORIO = Path(__file__).resolve().parent / "componente_mapa"
 #: abaixo de ~400 não dá para acompanhar de onde veio.
 TRANSICAO_MS = 700
 
+#: Chaves das feições deste painel, na ordem de precedência. `cod_mun6`
+#: primeiro, porque a feição de município pode carregar a região junto.
+CAMPOS_CLIQUE = ("cod_mun6", "regiao", "uf")
+
 _componente = components.declare_component("mapa_deck", path=str(DIRETORIO))
 
 
@@ -45,10 +49,14 @@ def desenhar(mapa_deck, *, altura: int, key: str = "mapa", transicao: int = TRAN
     )
 
 
-def alvo_do_clique(evento, nonce_visto: str | None) -> tuple[str | None, str | None]:
+def alvo_do_clique(
+    evento, nonce_visto: str | None, campos: tuple[str, ...] = CAMPOS_CLIQUE
+) -> tuple[str | None, str | None]:
     """``(chave clicada, nonce)`` se o evento é novo; ``(None, None)`` se não.
 
-    Mesmas chaves do `mapa.alvo_do_clique`: `cod_mun6`, `regiao`, `uf`.
+    ``campos`` são as chaves das feições na ordem de precedência — a primeira
+    que existir ganha. É o único ponto do componente que sabe de território:
+    o RecifeTB passa ``("bairro_key", "ds")``, o DFTB a chave da RA.
     """
     if not isinstance(evento, dict):
         return None, None
@@ -58,7 +66,7 @@ def alvo_do_clique(evento, nonce_visto: str | None) -> tuple[str | None, str | N
     props = evento.get("properties")
     if not isinstance(props, dict):
         return None, nonce
-    for campo in ("cod_mun6", "regiao", "uf"):
+    for campo in campos:
         if props.get(campo):
             return str(props[campo]), nonce
     return None, nonce
