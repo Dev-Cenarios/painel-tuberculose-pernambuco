@@ -151,30 +151,11 @@ def escala_natural(
             ] + cortes[-1:]
     else:
         cortes = _quebras_naturais(limpos.to_numpy(), classes)
-    if len(cortes) < 2:
-        unico = float(cortes[0])
-        rotulo = _formatar(unico, decimais)
-        return Escala(
-            cortes=[unico, unico],
-            rotulos=[rotulo],
-            cores={rotulo: rampa[len(rampa) // 2], ROTULO_SEM_DADO: SEM_DADO},
-        )
-
-    # A rampa tem 7 tons; com menos classes, pega tons distribuídos nela.
-    usadas = len(cortes) - 1
-    indices = np.linspace(0, len(rampa) - 1, usadas).round().astype(int)
-    tons = [rampa[i] for i in indices]
-
-    rotulos = [
-        f"{_formatar(cortes[i], decimais)} a {_formatar(cortes[i + 1], decimais)}"
-        for i in range(usadas)
-    ]
-    # `strict=True` prende a invariante: rótulos e tons saem os dois de
-    # `usadas`, e se um dia divergirem, classes sumiriam da legenda sem
-    # erro — o mapa continuaria colorido e a legenda incompleta.
-    cores = dict(zip(rotulos, tons, strict=True))
-    cores[ROTULO_SEM_DADO] = SEM_DADO
-    return Escala(cortes=[float(c) for c in cortes], rotulos=rotulos, cores=cores)
+    # O mesmo montador dos outros dois métodos: os três diferem em **onde
+    # cortar**, e rótulo e cor se montam igual. Enquanto isto estava
+    # duplicado aqui, a proteção contra cortes que se escrevem iguais não
+    # valia para quebras naturais (o hansepe achou o mesmo em `be0a653`).
+    return _montar(cortes, rampa, decimais)
 
 
 #: Como o mapa reparte os valores em classes de cor.
@@ -215,6 +196,36 @@ def _montar(
     corte declarado com o máximo observado do ano, que é só o teto do `cut`.
     """
     cortes = [float(c) for c in cortes]
+    # Cortes que se **escrevem** iguais viram um só.
+    #
+    # Achado no hansepe (`be0a653`, 09/out/2026): duas regiões de saúde do
+    # Agreste com 2,7765 e 2,7878 são "2,8" as duas, o quintil montava classes
+    # "2,8 a 2,8" e o `cut` recusa rótulos repetidos — o mapa caía com
+    # `ValueError`. Classe que não se distingue na legenda não é classe.
+    #
+    # **As pontas ficam.** O primeiro corte é o mínimo e o último é o máximo
+    # da série, que aqui é o teto do `cut` — o hansepe pode guardar o primeiro
+    # de cada repetição porque troca o último limite por infinito. Por isso,
+    # na repetição, o corte novo **substitui** o anterior, salvo quando o
+    # anterior é o mínimo: o rótulo não muda e o município mais alto continua
+    # dentro de uma classe.
+    if cortes:
+        distintos = [cortes[0]]
+        for corte in cortes[1:]:
+            if _formatar(corte, decimais) != _formatar(distintos[-1], decimais):
+                distintos.append(corte)
+            elif len(distintos) > 1:
+                distintos[-1] = corte
+        if len(distintos) == 1 and len(cortes) > 1:
+            # Tudo se escreve igual: uma classe só, mas cobrindo do mínimo ao
+            # máximo, não um ponto que deixa o resto de fora do `cut`.
+            rotulo = _formatar(distintos[0], decimais)
+            return Escala(
+                cortes=[cortes[0], cortes[-1]],
+                rotulos=[rotulo],
+                cores={rotulo: rampa[len(rampa) // 2], ROTULO_SEM_DADO: SEM_DADO},
+            )
+        cortes = distintos
     if len(cortes) < 2:
         unico = cortes[0] if cortes else 0.0
         rotulo = _formatar(unico, decimais)
@@ -767,16 +778,21 @@ def _compactar(mapa_deck) -> None:
 
         from pydeck.bindings.json_tools import default_serialize
 
+        # `allow_nan=False`: um `NaN` perdido tem de **estourar aqui**, onde dá
+        # para ver, e não chegar ao navegador como JSON inválido e deixar o
+        # mapa parado.
         compacto = json.dumps(
             mapa_deck,
             sort_keys=True,
             default=default_serialize,
             separators=(",", ":"),
+            allow_nan=False,
         )
-    # Captura ampla de propósito: otimização não pode derrubar o mapa. E
-    # `Exception`, nunca `BaseException` — `RerunException` herda desta
-    # última justamente para atravessar blocos como este.
-    except Exception:
+    # Só a API interna do pydeck pode mudar sem aviso — nesse caso o payload
+    # fica grande, nunca a página quebrada. Dado inválido (`ValueError`)
+    # **não** entra aqui: antes esta captura era `Exception` e escondia
+    # justamente o `NaN`.
+    except (ImportError, AttributeError):
         return
 
     mapa_deck.to_json = lambda: compacto
@@ -949,6 +965,14 @@ def deck(
         lambda v: "—" if pd.isna(v) else _formatar(float(v), decimais)
     )
     dados["rotulo"] = dados[colunas[-1]].astype(str)
+    # `NaN` não é JSON: o Python o escreve como `NaN` e o `JSON.parse` do
+    # componente levanta — o mapa então **mantém o desenho anterior**, e só a
+    # legenda (que vem do Python) troca. Acontecia com Cura em toda
+    # macrorregião e região de saúde, onde a geometria memoizada monta as
+    # propriedades por `to_dict` e não pelo `to_json` do geopandas, que já
+    # escrevia `null`. Ausente é `null`. Vem depois de `classe` e `exibicao`,
+    # que precisam do `NaN` para dar "sem dado" e "—".
+    dados["valor"] = dados["valor"].astype(object).where(dados["valor"].notna(), None)
     # O deck escapa HTML vindo das propriedades, então cada linha extra do
     # tooltip entra como **valor** já formatado (`d0`, `d1`, …) e rótulo e
     # cor — iguais para todas as feições — ficam no template.

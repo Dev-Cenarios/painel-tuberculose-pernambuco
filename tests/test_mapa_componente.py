@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from src import mapa_componente
 
 
@@ -81,3 +83,116 @@ def test_scripts_dos_componentes_levam_a_versao_no_nome() -> None:
         for nome, versao in scripts:
             esperado = hashlib.sha1((pasta / nome).read_bytes()).hexdigest()[:8]
             assert versao == esperado, f"{pasta.name}/{nome}: carimbo {versao} != {esperado} — rode scripts/versionar_js.py"
+
+
+# ---------------------------------------------------------------------------
+# Valor ausente: o `NaN` que deixava o mapa parado ao escolher Cura
+# ---------------------------------------------------------------------------
+#
+# Achado no DFTB em 08/out/2026 (`a4a2101` de lá) e trazido para cá em
+# 14/out: município sem encerramento tem `cura_pct` `NaN`, e no caminho da
+# geometria memoizada — toda macrorregião e região de saúde, onde não há ilha
+# que o desligue — ele ia ao navegador como `NaN`, JSON inválido. O
+# `JSON.parse` do componente falhava e o mapa mantinha o desenho anterior,
+# enquanto a legenda (que vem do Python) trocava.
+
+
+def _json_estrito(texto: str) -> dict:
+    """Parse que recusa `NaN`/`Infinity` como o `JSON.parse` do navegador."""
+
+    def recusa(constante: str):
+        raise ValueError(f"não é JSON válido: {constante}")
+
+    return json.loads(texto, parse_constant=recusa)
+
+
+def _dois_municipios():
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    return gpd.GeoDataFrame(
+        {"cod_mun6": ["1", "2", "3"], "nome_mun": ["A", "B", "C"]},
+        geometry=[box(-36, -9, -35, -8), box(-35, -9, -34, -8), box(-34, -9, -33, -8)],
+        crs="EPSG:4326",
+    )
+
+
+def _deck(camada, valores, **extra):
+    import pandas as pd
+
+    from src import doencas, mapa
+
+    pack = doencas.carregar()
+    return mapa.deck(
+        camada, pd.Series(valores, index=["1", "2", "3"]), chave="cod_mun6",
+        rampa=pack.rampa_mapa("cura_pct"), rotulo_metrica="x", coluna_nome="nome_mun",
+        **extra,
+    )
+
+
+@pytest.mark.parametrize("memoizada", [False, True])
+def test_valor_ausente_vira_null_e_o_json_e_valido(memoizada: bool) -> None:
+    from src import mapa
+
+    camada = _dois_municipios()
+    extra = {"geometrias": mapa.geometrias_geojson(camada)} if memoizada else {}
+    desenho, _ = _deck(camada, [1.0, float("nan"), 3.0], **extra)
+
+    spec = _json_estrito(desenho.to_json())
+    feicoes = next(c for c in spec["layers"] if c.get("id") == "geografia")["data"]["features"]
+    por_mun = {f["properties"]["cod_mun6"]: f["properties"] for f in feicoes}
+    assert por_mun["2"]["valor"] is None
+    assert por_mun["1"]["valor"] == 1.0
+    assert por_mun["2"]["classe"] == mapa.ROTULO_SEM_DADO
+    assert por_mun["2"]["exibicao"] == "—"
+
+
+def test_todos_sem_valor_tambem_nao_quebra() -> None:
+    from src import mapa
+
+    camada = _dois_municipios()
+    desenho, escala = _deck(
+        camada, [float("nan")] * 3, geometrias=mapa.geometrias_geojson(camada)
+    )
+    _json_estrito(desenho.to_json())
+    assert not escala.rotulos
+
+
+def test_a_serializacao_compacta_nao_engole_dado_invalido() -> None:
+    """O `except Exception` de `_compactar` escondia justamente o `NaN`: o
+    pydeck caía no `to_json` padrão, que o aceita, e o erro só aparecia no
+    navegador. Dado inválido tem de estourar onde dá para ver."""
+    import pydeck
+
+    from src import mapa
+
+    deck = pydeck.Deck(
+        layers=[pydeck.Layer("GeoJsonLayer", data={"type": "FeatureCollection", "features": [
+            {"type": "Feature", "geometry": None, "properties": {"valor": float("nan")}}]})],
+    )
+    with pytest.raises(ValueError):
+        mapa._compactar(deck)
+
+
+@pytest.mark.dado
+@pytest.mark.parametrize("ano", [2023, 2024])
+def test_cura_numa_macrorregiao_sai_em_json_valido(ano: int) -> None:
+    """O caso real: PE sem Fernando de Noronha é o recorte de uma macrorregião
+    — sem ilha, a geometria memoizada vale, e metade dos municípios não tem
+    encerramento no ano."""
+    from src import doencas, mapa
+    from src.data import geo, leitura
+    from src.data.escopo import Escopo
+
+    pack = doencas.carregar()
+    camada = geo.municipios("PE")
+    _, ilhas = mapa.limites_uteis(camada)
+    camada = camada.drop(index=ilhas).reset_index(drop=True)
+    valores = leitura.valores_por_geografia(Escopo("TUBERCULOSE", ano, "UF", uf="PE"), "cura_pct")
+    assert valores.isna().any(), "o teste só prova algo se houver município sem taxa"
+
+    desenho, _ = mapa.deck(
+        camada, valores, chave="cod_mun6", rampa=pack.rampa_mapa("cura_pct"),
+        rotulo_metrica="Cura", geometrias=mapa.geometrias_geojson(camada),
+    )
+    _json_estrito(desenho.to_json())

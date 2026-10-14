@@ -697,3 +697,69 @@ def test_o_atlas_de_fonte_cobre_o_texto_que_a_camada_desenha() -> None:
         for linha in camada_json["data"]:
             faltando = [c for c in linha["texto"] if c not in conjunto]
             assert not faltando, f"{linha['texto']!r} perde {faltando} no atlas"
+
+
+# ---------------------------------------------------------------------------
+# Cortes que se escrevem iguais
+# ---------------------------------------------------------------------------
+#
+# Achado no hansepe em 09/out/2026 (`be0a653` de lá) e trazido para cá em
+# 14/out. O tbpe navega até a região de saúde dentro de uma macro, e é aí que
+# a série tem dois, três valores.
+
+
+@pytest.mark.parametrize("metodo", mapa.CLASSIFICACOES)
+def test_valores_que_se_escrevem_iguais_nao_quebram_o_mapa(metodo: str) -> None:
+    """Duas regiões com a mesma taxa arredondada derrubavam o mapa inteiro.
+
+    No hansepe: o Agreste tem duas regiões de saúde, e em 2016 elas tinham
+    2,7765 e 2,7878 por 100 mil — "2,8" as duas. O quintil montava classes
+    rotuladas "2,8 a 2,8", o `cut` recusa rótulos repetidos e o mapa caía com
+    `ValueError`. Deixar o `cut` aceitar não serviria: o dicionário de cores é
+    indexado pelo rótulo, e a legenda exibiria a mesma faixa várias vezes.
+    """
+    valores = pd.Series([2.7765, 2.7878])
+    escala = mapa.escala(
+        valores, ["#111"] * 7, metodo=metodo,
+        cortes_fixos=list(tb.CORTES_FIXOS["incid"]), decimais=1,
+    )
+    classes = mapa.classificar(valores, escala)
+
+    assert len(escala.rotulos) == len(set(escala.rotulos)), escala.rotulos
+    assert set(escala.rotulos) <= set(escala.cores), "faixa sem cor na legenda"
+    assert mapa.ROTULO_SEM_DADO not in list(classes)
+
+
+@pytest.mark.parametrize("metodo", mapa.CLASSIFICACOES)
+@pytest.mark.parametrize(
+    "valores",
+    [
+        [1.0],                        # um só
+        [0.0, 0.0, 0.0, 0.0],         # tudo zero
+        [0.0, 0.0, 0.0, 999.0],       # um fora da curva
+        [1.0, 1.0001, 1.0002],        # separados só na quarta casa
+        [-0.0, 0.04, 0.06],           # arredondam para 0,0 e 0,1
+        [1.0, 2.7765, 2.7878],        # o máximo se escreve igual ao vizinho
+        [0.0, 0.0, 1.0, 2.7765, 2.7878],
+    ],
+    ids=["um", "zeros", "cauda", "quase_iguais", "redondos", "topo", "topo_com_zeros"],
+)
+def test_a_escala_sobrevive_a_series_degeneradas(metodo: str, valores) -> None:
+    """Uma macrorregião tem quatro valores; uma região de saúde dentro de uma
+    macro pode ter dois. É aí que a classificação encontra os casos que
+    derrubam: todos iguais, quase iguais, um só.
+
+    `topo` é do port: aqui o último corte é o **máximo** da série (o hansepe
+    o troca por infinito no `classificar`), então juntar cortes repetidos
+    guardando o primeiro deixaria o município mais alto fora de toda classe,
+    pintado de "sem dado".
+    """
+    serie = pd.Series(valores)
+    escala = mapa.escala(serie, ["#111"] * 7, metodo=metodo,
+                         cortes_fixos=[0, 2, 10], decimais=1)
+    classes = mapa.classificar(serie, escala)
+
+    assert len(escala.rotulos) == len(set(escala.rotulos)), escala.rotulos
+    assert set(escala.rotulos) <= set(escala.cores)
+    assert len(classes) == len(serie)
+    assert mapa.ROTULO_SEM_DADO not in list(classes), "valor existente ficou sem classe"
