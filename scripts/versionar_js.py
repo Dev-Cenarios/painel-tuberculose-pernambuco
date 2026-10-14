@@ -1,9 +1,10 @@
 """Carimba `?v=<hash do arquivo>` nos `<script src>` dos componentes.
 
-Rode depois de editar `mapa.js` ou `grafico.js`. O Streamlit serve `.js` com
+Rode depois de editar `grafico.js`. O `mapa.js` mora no cenarios-core, que
+tem o seu. O Streamlit serve `.js` com
 `Cache-Control: public` e só o `index.html` com `no-cache`: sem o carimbo,
 o navegador de quem já abriu o painel segue com o JavaScript antigo.
-`tests/test_mapa_componente.py` cobra que o carimbo bata com o arquivo.
+`tests/test_grafico_componente.py` cobra que o carimbo bata com o arquivo.
 
     python -m scripts.versionar_js
 """
@@ -15,7 +16,7 @@ import re
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[1] / "src"
-PASTAS = ("componente_mapa", "componente_grafico")
+PASTAS = ("componente_grafico",)
 
 
 def carimbar(pasta: Path) -> list[str]:

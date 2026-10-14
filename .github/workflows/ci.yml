@@ -56,4 +56,5 @@ jobs:
       # runner cancelar o job por tempo — seis horas, na primeira execução.
       - name: A imagem carrega os componentes vendorados
         run: |
-          docker run --rm --entrypoint ls tbpe:ci             src/componente_mapa/deck.min.js src/componente_grafico/echarts.min.js
+          docker run --rm --entrypoint ls tbpe:ci             src/componente_grafico/echarts.min.js
+          docker run --rm --entrypoint python tbpe:ci -c "import cenarios_core.mapa_componente as m; assert (m.DIRETORIO / 'deck.min.js').is_file()"

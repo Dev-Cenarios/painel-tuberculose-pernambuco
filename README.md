@@ -93,7 +93,7 @@ O que a extração traz e onde diverge do Ministério da Saúde:
 app.py                      composição da tela (página única)
  └─ src/estado.py           navegação: PE → macrorregião → região de saúde → município
      └─ src/data/           escopo, leitores DuckDB sobre parquet, KPIs, canal, recortes, geometria
-         ├─ src/mapa.py + src/mapa_componente.py       mapa (pydeck → deck.gl vivo)
+         ├─ cenarios_core.mapa + .mapa_componente     mapa (pydeck → deck.gl vivo), do cenarios-core
          └─ src/grafico_componente.py                 gráficos (opções ECharts vivas)
 src/doencas/tuberculose.py  o "disease pack": KPIs, cortes, variáveis, rótulos, cores
 src/theme/                  tokens, cores e componentes HTML/CSS da identidade visual
@@ -167,12 +167,8 @@ tbpe/
 ├── app.py                        composição da tela
 ├── src/
 │   ├── estado.py                 navegação PE → macro → região → município
-│   ├── mapa.py                   camadas, escalas de cor, legenda (pydeck)
-│   ├── mapa_componente.py        o mapa como componente vivo
-│   ├── componente_mapa/          deck.gl vendorado + protocolo do Streamlit
 │   ├── grafico_componente.py     os gráficos como opções ECharts
 │   ├── componente_grafico/       ECharts vendorado + protocolo do Streamlit
-│   ├── resiliencia.py            isolamento de falha por bloco da tela
 │   ├── data/                     escopo, leitura, kpis, canal, recortes, geo
 │   ├── doencas/tuberculose.py    o pack da doença
 │   └── theme/                    identidade visual

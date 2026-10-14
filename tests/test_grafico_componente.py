@@ -43,7 +43,7 @@ def test_ranking_destaca_o_selecionado_e_recua_os_outros() -> None:
 
 
 def test_ranking_usa_a_cor_da_classe_do_mapa() -> None:
-    from src import mapa
+    from cenarios_core import mapa
 
     escala = mapa.escala(_tabela()["valor"], ["#111111", "#222222", "#333333"], metodo="NATURAL")
     opt = gc.ranking(_tabela(), rotulo="x", cor="#000", escala=escala)
@@ -179,3 +179,20 @@ def test_piramide_por_100_mil_recalcula_e_muda_o_rotulo() -> None:
 def test_piramide_vazia_tem_recado() -> None:
     opt = gc.piramide(pd.DataFrame(columns=["sexo", "faixa_ord", "faixa_etaria", "valor", "pop"]), rotulo="Casos")
     assert "Sem dado" in opt["title"]["text"]
+
+
+def test_o_script_do_componente_leva_a_versao_no_nome() -> None:
+    """O Streamlit serve `.js` com `Cache-Control: public` e só o `index.html`
+    com `no-cache`. Sem o `?v=<hash>` no `src`, quem já abriu o painel uma
+    vez continua com o JavaScript antigo. Mudou o JS, rode
+    `python -m scripts.versionar_js`. O do mapa é cobrado no cenarios-core."""
+    import hashlib
+    import re
+
+    pasta = gc.DIRETORIO
+    html = (pasta / "index.html").read_text(encoding="utf-8")
+    scripts = re.findall(r'<script src="([^"?]+)\?v=([0-9a-f]{8})"></script>', html)
+    assert scripts, "script sem ?v="
+    for nome, versao in scripts:
+        esperado = hashlib.sha1((pasta / nome).read_bytes()).hexdigest()[:8]
+        assert versao == esperado, f"{nome}: carimbo {versao} != {esperado} — rode scripts/versionar_js.py"

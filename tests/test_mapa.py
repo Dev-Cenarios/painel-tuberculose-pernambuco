@@ -8,170 +8,19 @@ recortes onde metade dos municípios tem zero.
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 import pytest
 
-from src import mapa
+from cenarios_core import mapa
 from src.data import geo
 from src.doencas import tuberculose as tb
 
 RAMPA = tb.rampa_mapa("casos")
 
 
-def _gvf(valores: pd.Series, escala) -> float:
-    """Quanto da variância a classificação explica. 1,0 seria perfeito.
-
-    É o critério do Jenks: soma dos desvios dentro de cada classe contra a
-    soma dos desvios em torno da média geral.
-    """
-    import numpy as np
-
-    v = valores.to_numpy(dtype=float)
-    total = ((v - v.mean()) ** 2).sum()
-    if not total:
-        return 1.0
-    idx = np.clip(np.searchsorted(escala.cortes, v, side="right") - 1, 0, len(escala.cortes) - 2)
-    dentro = sum(((v[idx == i] - v[idx == i].mean()) ** 2).sum() for i in set(idx))
-    return 1 - dentro / total
-
-
-def test_escala_uniforme_fica_equilibrada() -> None:
-    """Sem cauda, quebras naturais dão classes parecidas com os quantis.
-
-    Serve de piso: a troca de esquema não pode desequilibrar o caso fácil.
-    """
-    valores = pd.Series(range(600))
-    escala = mapa.escala_natural(valores, RAMPA)
-
-    assert escala.classes == mapa.CLASSES
-    contagem = mapa.classificar(valores, escala).value_counts()
-    assert contagem.max() / contagem.min() < 1.5, (
-        f"classes desequilibradas em dado uniforme: {dict(contagem)}"
-    )
-
-
-def test_a_escala_nao_comprime_a_cauda() -> None:
-    """O motivo da troca, preso em teste.
-
-    A incidência tem cauda longa, e classe de igual frequência põe tudo que é
-    extremo no mesmo balde: em PE, 29 municípios dividiam uma cor cobrindo de
-    59 a 445 por 100 mil — Itapissuma e Goiana pintados iguais com seis vezes
-    de diferença. Num painel de vigilância o topo é o que se olha.
-
-    O teste compara com o esquema antigo no mesmo dado: quebras naturais têm
-    de explicar mais variância que os quantis.
-    """
-    import numpy as np
-
-    rng = np.random.default_rng(42)
-    cauda = pd.Series(np.concatenate([rng.gamma(1.2, 8, 400), [180, 240, 445]]))
-
-    escala = mapa.escala_natural(cauda, RAMPA)
-    quantis = mapa.Escala(
-        cortes=sorted(set(np.quantile(cauda, np.linspace(0, 1, mapa.CLASSES + 1)))),
-        rotulos=[],
-        cores={},
-    )
-
-    assert _gvf(cauda, escala) > _gvf(cauda, quantis) + 0.2, (
-        f"naturais {_gvf(cauda, escala):.3f} contra quantis {_gvf(cauda, quantis):.3f} — "
-        f"a vantagem sumiu; a classificação voltou a comprimir a cauda?"
-    )
-
-    # E o topo não pode virar um balde só: o maior valor tem de estar numa
-    # classe menor que a metade dos dados.
-    no_topo = int((cauda >= escala.cortes[-2]).sum())
-    assert no_topo < len(cauda) / 8, f"{no_topo} de {len(cauda)} na classe do topo"
-
-
-def test_toda_classe_tem_cor() -> None:
-    escala = mapa.escala_natural(pd.Series(range(100)), RAMPA)
-    for rotulo in escala.rotulos:
-        assert rotulo in escala.cores
-    assert escala.cores[mapa.ROTULO_SEM_DADO] == mapa.SEM_DADO
-
-
-def test_valor_minimo_entra_na_primeira_classe() -> None:
-    """`pd.cut` exclui o limite inferior por padrão — o menor viraria "sem dado"."""
-    valores = pd.Series([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-    escala = mapa.escala_natural(valores, RAMPA)
-    classes = mapa.classificar(valores, escala)
-    assert classes.iloc[0] != mapa.ROTULO_SEM_DADO
-
-
-def test_maioria_zerada_nao_gera_classes_vazias() -> None:
-    """Recorte pequeno: 70 municípios sem caso e 30 com.
-
-    Sem colapsar quantis repetidos, vários cortes cairiam em zero e a legenda
-    mostraria classes "0,0 a 0,0" idênticas.
-    """
-    valores = pd.Series([0] * 70 + list(range(1, 31)))
-    escala = mapa.escala_natural(valores, RAMPA)
-
-    assert len(set(escala.rotulos)) == len(escala.rotulos), "há classes repetidas"
-    classes = mapa.classificar(valores, escala)
-    assert classes.notna().all()
-    assert set(classes.unique()) <= set(escala.rotulos) | {mapa.ROTULO_SEM_DADO}
-
-
-def test_valor_unico_produz_uma_classe() -> None:
-    escala = mapa.escala_natural(pd.Series([7.0] * 20), RAMPA)
-    assert escala.classes == 1
-    classes = mapa.classificar(pd.Series([7.0] * 20), escala)
-    assert (classes != mapa.ROTULO_SEM_DADO).all()
-
-
-def test_serie_vazia_nao_quebra() -> None:
-    escala = mapa.escala_natural(pd.Series([], dtype=float), RAMPA)
-    assert escala.classes == 0
-    classes = mapa.classificar(pd.Series([1.0, 2.0]), escala)
-    assert (classes == mapa.ROTULO_SEM_DADO).all()
-
-
-@pytest.mark.parametrize("ruim", [np.nan, np.inf, -np.inf, None])
-def test_valores_invalidos_viram_sem_dado(ruim) -> None:
-    valores = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, ruim], dtype=float)
-    escala = mapa.escala_natural(valores, RAMPA)
-    classes = mapa.classificar(valores, escala)
-    assert classes.iloc[-1] == mapa.ROTULO_SEM_DADO
-
-
-def test_cor_de_sem_dado_nao_colide_com_a_rampa() -> None:
-    """Cinza tem de ser distinguível de qualquer tom, senão some no mapa."""
-    escala = mapa.escala_natural(pd.Series(range(100)), RAMPA)
-    tons = {v.upper() for k, v in escala.cores.items() if k != mapa.ROTULO_SEM_DADO}
-    assert mapa.SEM_DADO.upper() not in tons
-
-
-def test_rotulos_em_portugues() -> None:
-    escala = mapa.escala_natural(pd.Series([0.0, 1234.5, 2000.0] * 5), RAMPA)
-    assert any("," in r for r in escala.rotulos), "decimal tem de ser vírgula"
-
-
 # ---------------------------------------------------------------------------
 # Enquadramento
 # ---------------------------------------------------------------------------
-
-
-def test_enquadrar_centraliza_no_bbox() -> None:
-    """Longitude é média simples; latitude, média em Mercator.
-
-    O centro vertical da projeção não é a média dos graus: o Mercator estica
-    conforme se afasta do equador. Para o Brasil a diferença chega a 0,8°, o
-    bastante para Roraima e Amapá saírem pela borda de cima depois que o
-    enquadramento passou a ser justo.
-    """
-    quadro = mapa.enquadrar((-40.0, -10.0, -30.0, -5.0))
-    assert quadro["center"]["lon"] == pytest.approx(-35.0)
-
-    esperado = mapa._mercator_inverso(
-        (mapa._mercator(-10.0) + mapa._mercator(-5.0)) / 2
-    )
-    assert quadro["center"]["lat"] == pytest.approx(esperado)
-    assert quadro["center"]["lat"] != pytest.approx(-7.5, abs=1e-4), (
-        "voltou a centralizar pela média dos graus"
-    )
 
 
 def test_enquadrar_cabe_nas_duas_bordas() -> None:
@@ -201,19 +50,6 @@ def test_recorte_menor_recebe_zoom_maior() -> None:
     assert estado["zoom"] > pais["zoom"]
 
 
-def test_zoom_fica_dentro_de_limites_usaveis() -> None:
-    minusculo = mapa.enquadrar((-35.0, -8.0, -35.0001, -8.0001))
-    enorme = mapa.enquadrar((-180.0, -90.0, 180.0, 90.0))
-    assert 2.0 <= minusculo["zoom"] <= 11.0
-    assert 2.0 <= enorme["zoom"] <= 11.0
-
-
-def test_bbox_degenerado_nao_quebra() -> None:
-    quadro = mapa.enquadrar((-35.0, -8.0, -35.0, -8.0))
-    assert quadro["zoom"] > 0
-    assert quadro["center"]["lon"] == pytest.approx(-35.0)
-
-
 # ---------------------------------------------------------------------------
 # Clique no mapa (pydeck)
 # ---------------------------------------------------------------------------
@@ -227,72 +63,9 @@ class _Evento:
         self.selection = selection
 
 
-def _evento_com(props: dict):
-    return _Evento({"objects": {"camada-0": [{"properties": props}]}})
-
-
-def test_extrai_uf_do_clique() -> None:
-    assert mapa.alvo_do_clique(_evento_com({"uf": "PE"})) == "PE"
-
-
-def test_extrai_municipio_do_clique() -> None:
-    props = {"cod_mun6": "261160", "nome_mun": "Recife", "uf": "PE"}
-    assert mapa.alvo_do_clique(_evento_com(props)) == "261160"
-
-
-def test_municipio_tem_precedencia_sobre_a_uf() -> None:
-    """A feição de município também carrega `uf`; a chave mais específica vence."""
-    props = {"uf": "PE", "cod_mun6": "261160"}
-    assert mapa.alvo_do_clique(_evento_com(props)) == "261160"
-
-
-def test_extrai_regiao_de_saude() -> None:
-    assert mapa.alvo_do_clique(_evento_com({"regiao": "Sertão"})) == "Sertão"
-
-
-@pytest.mark.parametrize(
-    "evento",
-    [
-        None,
-        _Evento(None),
-        _Evento({}),
-        _Evento({"objects": {}}),
-        _Evento({"objects": {"camada-0": []}}),
-        _Evento({"objects": {"camada-0": [{"properties": {}}]}}),
-        _Evento({"objects": {"camada-0": ["texto solto"]}}),
-        {"selection": {"objects": {"camada-0": [{"properties": {"uf": "SP"}}]}}},
-    ],
-)
-def test_evento_estranho_nao_derruba_a_pagina(evento) -> None:
-    """O formato do evento é detalhe interno do Streamlit e já mudou entre
-    versões. Se vier algo inesperado, o mapa apenas não navega."""
-    resultado = mapa.alvo_do_clique(evento)
-    assert resultado is None or isinstance(resultado, str)
-
-
-def test_evento_em_dicionario_tambem_funciona() -> None:
-    bruto = {"selection": {"objects": {"c": [{"properties": {"uf": "BA"}}]}}}
-    assert mapa.alvo_do_clique(bruto) == "BA"
-
-
 # ---------------------------------------------------------------------------
 # Legenda em HTML
 # ---------------------------------------------------------------------------
-
-
-def test_legenda_cobre_todas_as_classes() -> None:
-    """O deck.gl não desenha legenda; ela é HTML, como os cards de KPI."""
-    escala = mapa.escala_natural(pd.Series(range(100)), RAMPA)
-    html = mapa.legenda(escala, "Incidência")
-    for rotulo in escala.rotulos:
-        assert rotulo in html
-    assert mapa.ROTULO_SEM_DADO in html
-    assert "Incidência" in html
-
-
-def test_legenda_escapa_o_titulo() -> None:
-    escala = mapa.escala_natural(pd.Series(range(10)), RAMPA)
-    assert "<script>" not in mapa.legenda(escala, "<script>alert(1)</script>")
 
 
 def test_deck_pinta_cada_feicao() -> None:
@@ -711,58 +484,3 @@ def test_o_atlas_de_fonte_cobre_o_texto_que_a_camada_desenha() -> None:
 # a série tem dois, três valores.
 
 
-@pytest.mark.parametrize("metodo", mapa.CLASSIFICACOES)
-def test_valores_que_se_escrevem_iguais_nao_quebram_o_mapa(metodo: str) -> None:
-    """Duas regiões com a mesma taxa arredondada derrubavam o mapa inteiro.
-
-    No hansepe: o Agreste tem duas regiões de saúde, e em 2016 elas tinham
-    2,7765 e 2,7878 por 100 mil — "2,8" as duas. O quintil montava classes
-    rotuladas "2,8 a 2,8", o `cut` recusa rótulos repetidos e o mapa caía com
-    `ValueError`. Deixar o `cut` aceitar não serviria: o dicionário de cores é
-    indexado pelo rótulo, e a legenda exibiria a mesma faixa várias vezes.
-    """
-    valores = pd.Series([2.7765, 2.7878])
-    escala = mapa.escala(
-        valores, ["#111"] * 7, metodo=metodo,
-        cortes_fixos=list(tb.CORTES_FIXOS["incid"]), decimais=1,
-    )
-    classes = mapa.classificar(valores, escala)
-
-    assert len(escala.rotulos) == len(set(escala.rotulos)), escala.rotulos
-    assert set(escala.rotulos) <= set(escala.cores), "faixa sem cor na legenda"
-    assert mapa.ROTULO_SEM_DADO not in list(classes)
-
-
-@pytest.mark.parametrize("metodo", mapa.CLASSIFICACOES)
-@pytest.mark.parametrize(
-    "valores",
-    [
-        [1.0],                        # um só
-        [0.0, 0.0, 0.0, 0.0],         # tudo zero
-        [0.0, 0.0, 0.0, 999.0],       # um fora da curva
-        [1.0, 1.0001, 1.0002],        # separados só na quarta casa
-        [-0.0, 0.04, 0.06],           # arredondam para 0,0 e 0,1
-        [1.0, 2.7765, 2.7878],        # o máximo se escreve igual ao vizinho
-        [0.0, 0.0, 1.0, 2.7765, 2.7878],
-    ],
-    ids=["um", "zeros", "cauda", "quase_iguais", "redondos", "topo", "topo_com_zeros"],
-)
-def test_a_escala_sobrevive_a_series_degeneradas(metodo: str, valores) -> None:
-    """Uma macrorregião tem quatro valores; uma região de saúde dentro de uma
-    macro pode ter dois. É aí que a classificação encontra os casos que
-    derrubam: todos iguais, quase iguais, um só.
-
-    `topo` é do port: aqui o último corte é o **máximo** da série (o hansepe
-    o troca por infinito no `classificar`), então juntar cortes repetidos
-    guardando o primeiro deixaria o município mais alto fora de toda classe,
-    pintado de "sem dado".
-    """
-    serie = pd.Series(valores)
-    escala = mapa.escala(serie, ["#111"] * 7, metodo=metodo,
-                         cortes_fixos=[0, 2, 10], decimais=1)
-    classes = mapa.classificar(serie, escala)
-
-    assert len(escala.rotulos) == len(set(escala.rotulos)), escala.rotulos
-    assert set(escala.rotulos) <= set(escala.cores)
-    assert len(classes) == len(serie)
-    assert mapa.ROTULO_SEM_DADO not in list(classes), "valor existente ficou sem classe"

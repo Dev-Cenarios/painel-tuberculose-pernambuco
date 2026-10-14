@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from src import mapa
+from cenarios_core import mapa
 from src.data import geo, leitura, recortes
 from src.doencas import tuberculose as tb
 from src.data.escopo import Escopo

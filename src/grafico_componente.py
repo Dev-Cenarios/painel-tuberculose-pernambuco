@@ -141,7 +141,7 @@ def ranking(
 
     ordenado = dados.sort_values(["valor", "nome"], ascending=[True, True])
     if escala is not None:
-        from . import mapa
+        from cenarios_core import mapa
 
         classes = mapa.classificar(ordenado["valor"], escala)
         cores = [escala.cores.get(c, cor) for c in classes]

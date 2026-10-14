@@ -48,3 +48,5 @@ urllib3==2.7.0
 uvicorn==0.52.1
 watchdog==6.0.0
 websockets==16.1.1
+# Núcleo comum dos painéis, versão fixa — ver ../cenarios-core/README.md.
+./vendor/cenarios_core-0.1.0-py3-none-any.whl

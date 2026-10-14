@@ -28,7 +28,7 @@ pytest.importorskip("duckdb")
 
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
-from src import resiliencia  # noqa: E402
+from cenarios_core import resiliencia  # noqa: E402
 from src.estado import Navegacao  # noqa: E402
 
 #: Generoso porque a primeira execução paga a leitura de geometria; as demais

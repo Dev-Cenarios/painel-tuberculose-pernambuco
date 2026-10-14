@@ -15,7 +15,9 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from src import doencas, grafico_componente, mapa, mapa_componente, resiliencia
+from cenarios_core import mapa, mapa_componente, resiliencia
+
+from src import doencas, grafico_componente
 from src.data import canal, geo, leitura, recortes
 from src.data import kpis as calc
 from src.data.escopo import Escopo

@@ -20,6 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # dois builds do mesmo commit poderiam subir versões diferentes. O lock tem as
 # versões exatas com que a suíte passa.
 COPY requirements.lock.txt .
+# O lock aponta para o wheel do cenarios-core em `vendor/`: vem antes do
+# `pip install`, e o build não precisa de rede (nem do GitHub) para o core.
+COPY vendor/ vendor/
 RUN pip install --no-cache-dir -r requirements.lock.txt
 
 COPY app.py .
