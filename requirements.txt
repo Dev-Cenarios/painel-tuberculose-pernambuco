@@ -2,7 +2,7 @@
 streamlit>=1.40
 # Mapa, componente deck.gl e contenção de falha: o núcleo comum dos painéis,
 # em versão fixa. O wheel mora em vendor/ — ver ../cenarios-core/README.md.
-./vendor/cenarios_core-0.4.0-py3-none-any.whl
+./vendor/cenarios_core-0.5.0-py3-none-any.whl
 duckdb>=1.1
 pyarrow>=16
 pandas>=2.2
