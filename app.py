@@ -492,7 +492,10 @@ with esquerda:
             # vez de trocar de slide. O clique volta com um nonce; o último
             # tratado fica em `session_state` para o mesmo evento não navegar
             # duas vezes.
-            evento = mapa_componente.desenhar(desenho, altura=ALTURA_MAPA, key="mapa")
+            evento = mapa_componente.desenhar(
+                desenho, altura=ALTURA_MAPA, key="mapa",
+                titulo=f"Mapa de Pernambuco: {pack.rotulo(nav.metrica)}",
+            )
             # O N de cada classe vai na própria legenda. O painel de origem
             # tem uma segunda caixa, "regiões por classe", que repete as faixas
             # só para acrescentar a contagem — em quintis ela é sempre 37, e

@@ -65,3 +65,18 @@ def test_cura_numa_macrorregiao_sai_em_json_valido(ano: int) -> None:
 # de contorno como casca e os campos do clique —, para ser o do core.
 
 
+@pytest.mark.dado
+def test_o_quadro_do_mapa_tem_nome_para_leitor_de_tela() -> None:
+    """O Streamlit batiza o iframe com o nome interno do componente, que um
+    leitor de tela anunciaria como nome de módulo. O core põe no quadro o
+    `titulo` que o painel manda (desde o 0.3.0); aqui se cobra que o tbpe
+    mande "Mapa de Pernambuco: <métrica>"."""
+    from streamlit.testing.v1 import AppTest
+
+    from tests.test_aplicacao import APLICACAO, LIMITE
+
+    at = AppTest.from_file(APLICACAO, default_timeout=LIMITE).run()
+    args = [json.loads(c.proto.json_args) for c in at.get("component_instance")
+            if '"spec"' in c.proto.json_args]
+    assert args, "o mapa não foi desenhado"
+    assert args[0]["titulo"].startswith("Mapa de Pernambuco: "), args[0].get("titulo")
