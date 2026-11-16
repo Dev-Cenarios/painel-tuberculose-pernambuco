@@ -22,6 +22,9 @@ services:
       - PYTHONUNBUFFERED=1
       - SINAN_DATA_DIR=/app/data
       - SINAN_DOENCA=tuberculose
+      # Enche o cache da tela de abertura assim que o processo sobe, para o
+      # primeiro acesso não pagar sozinho a leitura de tudo.
+      - AQUECER_CACHE=1
       - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
     volumes:
       # Código montado do repositório: `git pull` + restart aplica mudança sem

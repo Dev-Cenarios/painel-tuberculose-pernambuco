@@ -12,6 +12,9 @@ o que está aqui é arranjo de tela e fiação de estado.
 
 from __future__ import annotations
 
+import logging
+import threading
+
 import pandas as pd
 import streamlit as st
 
@@ -80,7 +83,10 @@ MESES = (
 # Cache — só valores primitivos como chave, nunca `Escopo` nem `Navegacao`.
 # ---------------------------------------------------------------------------
 
-TTL_DADOS = 24 * 3600
+#: Sem prazo: o dado só muda quando entra extração nova, e isso reinicia o
+#: processo. Com 24 h, quem abria o painel uma vez por dia pegava o cache
+#: vencido **toda** vez — 4 s a mais no primeiro acesso (medido em 16/nov).
+TTL_DADOS = None
 
 
 def _escopo(ano: int, nivel: str, mun: str | None, macro: str | None, micro: str | None) -> Escopo:
@@ -243,6 +249,58 @@ def _ano_inicial() -> int:
             return ano
     return _anos()[-1]
 
+
+def _aquecer() -> None:
+    """Enche o cache da tela de abertura antes de alguém pedir.
+
+    O primeiro acesso depois de subir o container pagava sozinho a leitura de
+    tudo: 12,5 s até a tela de cima, contra 7,6 s nos seguintes. Como o
+    processo é um só e o cache é dele, dá para fazer esse trabalho enquanto
+    ninguém está olhando.
+    """
+    ano = _ano_inicial()
+    _municipios()
+    for metrica in pack.METRICAS_MAPA:
+        _valores_mapa(ano, metrica, "MUN", None)
+    _kpis(ano, "UF", None, None, None)
+    _kpis(ano - 1, "UF", None, None, None)
+    _geojson("MUN", None, False, None, None)
+    _canal(ano, "UF", None, None, None)
+    _epicurva(ano, "UF", None, None, None)
+    _piramide(ano, "UF", None, None, None)
+    for variavel in pack.VARIAVEIS_DESTAQUE:
+        _composicao(ano, "UF", None, None, None, variavel)
+
+
+@st.cache_resource(show_spinner=False)
+def _aquecimento():
+    """Dispara o aquecimento uma vez por processo, fora do caminho do usuário.
+
+    Ligado por `AQUECER_CACHE=1`, que o `docker-compose.yml` define — e só
+    ele. Na suíte a thread concorre com o teste pelas mesmas chaves de cache e
+    derrubava o painel de indicadores; `streamlit.runtime.exists()` não serve
+    de porteiro porque fica verdadeiro depois que qualquer teste sobe runtime.
+    """
+    import os
+
+    from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+
+    if os.environ.get("AQUECER_CACHE") != "1":
+        return None
+
+    def tentar() -> None:
+        try:
+            _aquecer()
+        except Exception:  # aquecer é conforto, não pode derrubar o painel
+            logging.getLogger(__name__).exception("falhou ao aquecer o cache")
+
+    tarefa = threading.Thread(target=tentar, name="aquecer-cache", daemon=True)
+    add_script_run_ctx(tarefa, get_script_run_ctx())
+    tarefa.start()
+    return tarefa
+
+
+_aquecimento()
 
 if "nav" not in st.session_state:
     st.session_state.nav = Navegacao(doenca=pack.DOENCA, ano=_ano_inicial())

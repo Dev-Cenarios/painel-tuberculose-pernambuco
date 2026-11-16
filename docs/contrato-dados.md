@@ -41,6 +41,79 @@ Globar a raiz de um dataset e filtrar no `WHERE` **não** funciona: os arquivos 
 `nivel=BR` não têm a coluna `uf`, e o DuckDB resolve a união pelo esquema do
 primeiro arquivo, fazendo colunas sumirem. Por isso a poda é feita pelo caminho.
 
+## O que pedir ao banco
+
+Escrito em 16/nov/2026, na reunião com a SES-PE, que perguntou quais colunas a
+aplicação usa. Mesmo formato da seção irmã do hansepe. A lista sai do código —
+`src/doencas/tuberculose.py`, `src/data/kpis.py` e `src/data/leitura.py`.
+
+Nada que identifique a pessoa: sem nome, endereço, CNS ou data de nascimento.
+Basta a idade (ou faixa etária) e o município de residência.
+
+### Chaves de toda linha
+
+| Campo | Para quê |
+|---|---|
+| Município de **residência** (`ID_MN_RESI`, código IBGE) | toda a geografia: mapa, ranking, macro e região de saúde. Não o de notificação — ver armadilha 7 |
+| Data de diagnóstico (`DT_DIAG`) | ano e mês: cards, série anual e canal endêmico |
+| Sexo (`CS_SEXO`) e idade (`NU_IDADE_N`) | pirâmide etária e casos de 0 a 14 anos |
+
+### SINAN — o que derruba card
+
+| Variável | Para quê | Se faltar |
+|---|---|---|
+| `TRATAMENTO` | Tipo de entrada: **casos novos** (`=1`) | incidência, casos novos, mapa, ranking, série |
+| `SITUA_ENCE` | Encerramento: cura, abandono (2 e 10), óbito, não avaliado | cards de cura e de interrupção; empilhado de desfechos; métrica de cura no mapa |
+| `HIV` | Resultado da testagem | card de HIV positivo na testagem |
+
+`SITUA_ENCE` precisa vir com **todos os códigos**, inclusive `0` (ignorado) e
+vazio — ver armadilha 16: sem eles a cura e a interrupção aparecem maiores do
+que são.
+
+### SINAN — tópicos de interesse
+
+Uma variável que falte some do seletor de composição; nenhum card cai.
+
+| Grupo | Variáveis |
+|---|---|
+| Perfil | `CS_RACA`, `CS_ESCOL_N`, `CS_GESTANT` |
+| Populações específicas | `POP_RUA`, `POP_LIBER`, `POP_IMIG`, `POP_SAUDE`, `BENEF_GOV` |
+| Agravos associados | `AGRAVAIDS`, `AGRAVALCOO`, `AGRAVDIABE`, `AGRAVDOENC`, `AGRAVOUTRA` |
+| Clínica e diagnóstico | `FORMA`, `BACILOSC_E`, `CULTURA_ES`, `RAIOX_TORA`, `HISTOPATOL` |
+| Tratamento | `TRATSUP_AT`, `TRANSF` |
+
+`AGRAVDROGA` e `AGRAVTABAC` entram se vierem — a extração agregada de hoje não
+as traz, e o RecifeTB as mostra.
+
+### SIM — o painel usa
+
+Ao contrário do hansepe, **pedir SIM**. A mortalidade (card e mapa) sai dele,
+porque `casos_obitos` do SINAN é zero para TB (armadilha 1).
+
+| Campo | Para quê |
+|---|---|
+| Causa básica (`CAUSABAS`, CID A15–A19) | filtrar óbito por tuberculose |
+| Município de residência (`CODMUNRES`) | geografia |
+| Data do óbito (`DTOBITO`) | ano e mês |
+| Sexo e idade (`SEXO`, `IDADE`) | pirâmide de óbitos |
+
+O cruzamento SINAN × SIM (óbito sem notificação, ou notificado só depois do
+óbito) não existe hoje no painel; com as duas bases da SES ele passa a ser
+possível.
+
+### População
+
+Por município, ano, sexo e faixa etária — denominador da incidência, da
+mortalidade e da pirâmide. Se a SES tiver a sua, usamos a dela para os números
+baterem com o boletim estadual.
+
+### Fora por enquanto
+
+`indicadores_tb_contatos` e `indicadores_tb_cultura_retratamento` estão
+desligados (`INDICADORES_PROGRAMA = ()`): não descem a município. Com o
+microdado, contatos sairiam de `NU_CONTATO` e `NU_COMU_EX`, e cultura no
+retratamento de `CULTURA_ES` × `TRATAMENTO`.
+
 ## Fórmulas dos KPIs
 
 ```
