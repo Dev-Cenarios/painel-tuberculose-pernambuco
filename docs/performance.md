@@ -133,3 +133,43 @@ refazer o deck.
 
 - Vários usuários simultâneos.
 - O tempo de renderização no navegador, separado do tempo de servidor.
+
+---
+
+## Abertura, medida em 16/nov/2026
+
+O chefe reclamou de lentidão "quando acessamos". Medido no endereço público,
+com o CPU do navegador freado em 4× (uma máquina comum, não esta):
+
+| | HTML | 1º componente | tela de cima pronta |
+|---|---|---|---|
+| 1º acesso, container recém-subido | 0,9 s | 8,3 s | **12,5 s** |
+| acessos seguintes | 0,9 s | 4,3 s | 7,6 s |
+
+O gargalo não era dado nem VM: os leitores somam 230 ms em PE, o script roda
+em 0,3 s com cache quente, o nginx serve em 50 ms e a VM estava ociosa. Era o
+**cache vazio**: `TTL_DADOS` era de 24 h, então quem abria o painel uma vez
+por dia pagava a leitura inteira **toda** vez.
+
+Depois de tirar o prazo (o dado só muda com extração nova, que reinicia o
+processo) e aquecer a tela de abertura numa thread ao subir:
+
+| | tela de cima pronta |
+|---|---|
+| acesso comum, CPU 4× | 7,6 s → **5,2 s** |
+| acesso comum, CPU normal | 2,5 s → **1,8 s** |
+| 1º acesso depois de subir | 12,5 s → 10,5 s |
+
+### O que foi tentado e não vale
+
+- **Subir o ECharts só quando o gráfico chega perto da tela.** Corta o JS
+  interpretado de 15,5 MB para 2,7 MB — e mesmo assim ficou **mais lento**
+  com CPU freado (8,7 s contra 6,9 s): o gráfico visível passa a esperar o
+  observador e a busca do bundle, e o ganho de parse não paga essa espera.
+- **Bundle enxuto do ECharts** (470 kB em vez de 1 MB). Diferença medida:
+  nenhuma (6,4 s contra 6,3 s) — o navegador compila o arquivo uma vez e os
+  outros 13 iframes reaproveitam. De quebra, o `simple` não traz o componente
+  de título, e os nomes das variáveis nos tópicos somem.
+
+O que sobra no caminho crítico é o frontend do Streamlit (~2,6 s com CPU 4×)
+e o deck.gl do mapa — os dois fora do nosso alcance sem trocar de arquitetura.
