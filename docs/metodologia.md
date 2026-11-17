@@ -9,7 +9,7 @@ onde diverge do Ministério da Saúde, em [`contrato-dados.md`](contrato-dados.m
 
 - **SINAN** (notificações de tuberculose, residentes em Pernambuco), na
   extração agregada da equipe parceira — a mesma que serve o painel nacional
-  (`../sinan/data`). Anos 2010–2024 com 12 meses; 2025 tem 8 meses na série
+  (o acervo do painel nacional). Anos 2010–2024 com 12 meses; 2025 tem 8 meses na série
   mensal e é marcado como incompleto na tela.
 - **SIM** para óbitos e mortalidade (`cache_ts_sim_obitos`): o campo de
   óbito do agregado do SINAN é zero para tuberculose. O SIM fecha um ano
