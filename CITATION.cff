@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "Se usar este painel ou o seu código, cite-o como abaixo."
+type: software
+title: "Painel de Monitoramento da Tuberculose — Pernambuco"
+abstract: "Painel de vigilância epidemiológica da tuberculose em Pernambuco, com recorte por município, região de saúde e macrorregião de saúde, a partir do SINAN e do SIM."
+authors:
+  - given-names: Matheus
+    family-names: Cardoso
+    affiliation: "Projeto Cenários+, Universidade de Brasília"
+repository-code: "https://github.com/Dev-Cenarios/painel-tuberculose-pernambuco"
+url: "https://painel.cenarios.unb.br/cenarios/tbpe/"
+license: MIT
+keywords:
+  - epidemiologia
+  - vigilância epidemiológica
+  - tuberculose
+  - Pernambuco
+  - SINAN
