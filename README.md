@@ -1,6 +1,6 @@
 # Painel de Monitoramento da Tuberculose — Pernambuco
 
-[![CI](https://github.com/Mcardosor/Tuberculose_Pernambuco/actions/workflows/ci.yml/badge.svg)](https://github.com/Mcardosor/Tuberculose_Pernambuco/actions/workflows/ci.yml)
+[![CI](https://github.com/Dev-Cenarios/tbpe/actions/workflows/ci.yml/badge.svg)](https://github.com/Dev-Cenarios/tbpe/actions/workflows/ci.yml)
 ![Python 3.13](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/streamlit-1.61-FF4B4B?logo=streamlit&logoColor=white)
 ![deck.gl 9.3](https://img.shields.io/badge/deck.gl-9.3-1C1C1C)
@@ -120,11 +120,13 @@ mesma que serve o painel nacional — em parquet com particionamento Hive:
 hierarquia de regiões de saúde da SES-PE em `data/support/`.
 
 - **Nenhum dado nominal entra no projeto.** Só agregados por município.
-- Os parquets **não são versionados**. `data/` tem só a parte de
-  tuberculose — 55 MB —, copiada do acervo do painel nacional por
-  `python -m scripts.extrair_dados_tuberculose`. É cópia: quando a extração
-  for atualizada, rode o script de novo; `data/PROCEDENCIA.json` diz de onde
-  veio e quando.
+- **Os dados não estão no repositório.** A extração é da equipe parceira e
+  não é nossa para publicar. Quem for rodar o painel pede a extração à
+  equipe do Cenários+.
+- `data/` tem só a parte de tuberculose — 55 MB —, copiada do acervo do
+  painel nacional por `python -m scripts.extrair_dados_tuberculose`. É
+  cópia: quando a extração for atualizada, rode o script de novo;
+  `data/PROCEDENCIA.json` diz de onde veio e quando.
 - Cobertura: 2010 a 2025 (2025 parcial). O painel abre no último ano
   fechado.
 
@@ -133,16 +135,20 @@ hierarquia de regiões de saúde da SES-PE em `data/support/`.
 Requisitos: Python 3.13 e a extração de dados (ver acima).
 
 ```bash
-git clone https://github.com/Mcardosor/Tuberculose_Pernambuco.git tbpe
+git clone https://github.com/Dev-Cenarios/tbpe.git
 cd tbpe
 python -m venv .venv && .venv/Scripts/activate        # Linux/macOS: source .venv/bin/activate
 pip install -r requirements.lock.txt
-python -m scripts.extrair_dados_tuberculose           # monta ./data a partir de ../sinan/data
+python -m scripts.extrair_dados_tuberculose --origem <pasta da extração>
 streamlit run app.py
 ```
 
-O painel abre em <http://localhost:8501>. Na família Cenários+ os painéis
-compartilham o ambiente do painel nacional (`../sinan/.venv`).
+O painel abre em <http://localhost:8501>.
+
+Sem `--origem`, o script procura a extração em `../sinan/data`, que é onde
+ela fica quando o painel nacional está clonado ao lado deste. Se os dados
+estiverem em outro lugar e você não quiser copiar, aponte direto para eles
+com a variável `SINAN_DATA_DIR`.
 
 ## Testes
 
@@ -198,9 +204,9 @@ identidade, e as melhorias circulam entre eles:
 
 | Painel | Recorte | Repositório |
 |---|---|---|
-| Tuberculose — Pernambuco (este) | estado, por município e região de saúde | [Mcardosor/Tuberculose_Pernambuco](https://github.com/Mcardosor/Tuberculose_Pernambuco) |
-| Hanseníase — Pernambuco | estado, por município e região de saúde | [Mcardosor/hansepe](https://github.com/Mcardosor/hansepe) (privado) |
-| Tuberculose — Recife | cidade, por bairro e distrito sanitário | [Mcardosor/recifetb](https://github.com/Mcardosor/recifetb) (privado) |
+| Tuberculose — Pernambuco (este) | estado, por município e região de saúde | [Dev-Cenarios/tbpe](https://github.com/Dev-Cenarios/tbpe) |
+| Hanseníase — Pernambuco | estado, por município e região de saúde | [Dev-Cenarios/Hansepe](https://github.com/Dev-Cenarios/Hansepe) |
+| Tuberculose — Recife | cidade, por bairro e distrito sanitário | ainda não publicado |
 
 ## Fontes e créditos
 

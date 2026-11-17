@@ -130,6 +130,13 @@ Sobre `interrupcao`, ver a armadilha 4.
 
 ## Armadilhas
 
+> **Sobre a numeração.** O número de cada armadilha é a ordem em que ela foi
+> encontrada, não a ordem da página. Elas estão agrupadas por assunto (as de
+> `SITUA_ENCE` juntas, as de geografia juntas), e a 10 mora em
+> [Conciliação entre fontes](#conciliação-entre-fontes). A numeração **não**
+> foi refeita porque o código cita várias pelo número (`armadilha 3`,
+> `armadilha 6`…), e renumerar quebraria essas referências em silêncio.
+
 ### 1. `casos_obitos` é zero para tuberculose
 
 Em `incidence`, todos os anos de 2010 a 2025. Calcular mortalidade ou letalidade
